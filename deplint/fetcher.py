@@ -1,50 +1,65 @@
-"""Fetch package metadata (including license info) from PyPI."""
+"""Fetches package metadata from PyPI."""
+
 import urllib.request
 import urllib.error
 import json
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from deplint.parser import Dependency
-
-PYPI_URL = "https://pypi.org/pypi/{package}/json"
+PYPI_BASE_URL = "https://pypi.org/pypi/{package}/json"
 
 
-def fetch_package_info(package_name: str) -> Optional[dict]:
+def fetch_package_info(package_name: str) -> Optional[Dict[str, Any]]:
     """Fetch package metadata from PyPI. Returns None on failure."""
-    url = PYPI_URL.format(package=package_name)
+    url = PYPI_BASE_URL.format(package=package_name)
     try:
         with urllib.request.urlopen(url, timeout=10) as response:
-            return json.loads(response.read().decode("utf-8"))
+            data = json.loads(response.read().decode("utf-8"))
+            return data
     except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError):
         return None
 
 
-def extract_license(info: dict) -> Optional[str]:
-    """Extract SPDX-style license identifier from PyPI package info dict."""
-    raw = info.get("info", {}).get("license") or ""
-    raw = raw.strip()
-    if not raw or raw.lower() in ("unknown", "other", ""):
-        # Fall back to classifiers
-        classifiers = info.get("info", {}).get("classifiers", [])
-        for classifier in classifiers:
-            if classifier.startswith("License ::"):
-                parts = classifier.split(" :: ")
-                if len(parts) >= 3:
-                    return parts[-1].strip()
-        return None
-    return raw
+def extract_license(package_info: Dict[str, Any]) -> Optional[str]:
+    """Extract the license string from PyPI package metadata."""
+    info = package_info.get("info", {})
+    license_field = info.get("license") or ""
+    if license_field.strip():
+        return license_field.strip()
+    # Fall back to classifiers
+    classifiers: List[str] = info.get("classifiers", [])
+    for classifier in classifiers:
+        if classifier.startswith("License ::"):
+            parts = classifier.split(" :: ")
+            if len(parts) >= 3:
+                return parts[-1].strip()
+    return None
 
 
-def fetch_licenses(dependencies: List[Dependency]) -> Dict[str, Optional[str]]:
-    """Fetch license information for a list of dependencies.
+def extract_classifiers(package_info: Dict[str, Any]) -> List[str]:
+    """Extract all classifiers from PyPI package metadata."""
+    info = package_info.get("info", {})
+    return info.get("classifiers", [])
 
-    Returns a dict mapping package name -> license string (or None if unknown).
-    """
-    result: Dict[str, Optional[str]] = {}
-    for dep in dependencies:
-        info = fetch_package_info(dep.name)
-        if info is None:
-            result[dep.name] = None
+
+def fetch_licenses(package_names: List[str]) -> Dict[str, Optional[str]]:
+    """Fetch licenses for multiple packages. Returns a dict of name -> license."""
+    results: Dict[str, Optional[str]] = {}
+    for name in package_names:
+        info = fetch_package_info(name)
+        if info:
+            results[name] = extract_license(info)
         else:
-            result[dep.name] = extract_license(info)
-    return result
+            results[name] = None
+    return results
+
+
+def fetch_classifiers_map(package_names: List[str]) -> Dict[str, List[str]]:
+    """Fetch classifiers for multiple packages. Returns a dict of name -> classifiers."""
+    results: Dict[str, List[str]] = {}
+    for name in package_names:
+        info = fetch_package_info(name)
+        if info:
+            results[name.lower()] = extract_classifiers(info)
+        else:
+            results[name.lower()] = []
+    return results
