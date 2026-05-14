@@ -1,44 +1,55 @@
-"""High-level runner that orchestrates all checks and produces a report."""
-
+"""Run all configured checks against a list of dependencies."""
 from typing import List, Optional
-from deplint.parser import parse_requirements, Dependency
+from deplint.parser import Dependency, parse_requirements
 from deplint.version_checker import check_versions
 from deplint.license_checker import check_licenses
 from deplint.deprecated_checker import check_deprecated
 from deplint.security_checker import check_security
+from deplint.outdated_checker import check_outdated
 from deplint.report import AnalysisReport
 
 
 def run_all_checks(
-    dependencies: List[Dependency],
-    source_file: Optional[str] = None,
+    deps: List[Dependency],
+    source_file: str = "<unknown>",
     allow_licenses: Optional[List[str]] = None,
+    check_outdated_versions: bool = False,
+    pypi_info_map: Optional[dict] = None,
 ) -> AnalysisReport:
-    """Run all available checks on a list of dependencies."""
-    version_result = check_versions(dependencies)
-    license_result = check_licenses(dependencies, allow_list=allow_licenses)
-    deprecated_result = check_deprecated(dependencies)
-    security_result = check_security(dependencies)
+    """Run all checks on the given dependency list and return a report."""
+    version_result = check_versions(deps)
+    license_result = check_licenses(deps, allow_list=allow_licenses)
+    deprecated_result = check_deprecated(deps)
+    security_result = check_security(deps)
+
+    if check_outdated_versions:
+        outdated_result = check_outdated(deps, info_map=pypi_info_map)
+    else:
+        from deplint.outdated_checker import OutdatedCheckResult
+        outdated_result = OutdatedCheckResult()
 
     return AnalysisReport(
+        source_file=source_file,
         version_result=version_result,
         license_result=license_result,
         deprecated_result=deprecated_result,
         security_result=security_result,
-        source_file=source_file,
+        outdated_result=outdated_result,
     )
 
 
 def run_checks_from_file(
-    filepath: str,
+    path: str,
     allow_licenses: Optional[List[str]] = None,
+    check_outdated_versions: bool = False,
 ) -> AnalysisReport:
     """Parse a requirements file and run all checks."""
-    with open(filepath, "r") as fh:
+    with open(path, "r", encoding="utf-8") as fh:
         content = fh.read()
-    dependencies = parse_requirements(content)
+    deps = parse_requirements(content)
     return run_all_checks(
-        dependencies,
-        source_file=filepath,
+        deps,
+        source_file=path,
         allow_licenses=allow_licenses,
+        check_outdated_versions=check_outdated_versions,
     )
