@@ -1,64 +1,56 @@
-"""Report formatter for deplint analysis results."""
+"""Aggregate report combining all checker results."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from deplint.version_checker import CheckResult as VersionCheckResult
-from deplint.license_checker import LicenseCheckResult
 from deplint.deprecated_checker import DeprecationCheckResult
 from deplint.security_checker import SecurityCheckResult
-
-SECTION_SEP = "-" * 50
+from deplint.pin_checker import PinCheckResult
 
 
 @dataclass
 class AnalysisReport:
+    source_file: str
     version_result: VersionCheckResult
-    license_result: LicenseCheckResult
     deprecated_result: DeprecationCheckResult
     security_result: SecurityCheckResult
-    source_file: Optional[str] = None
+    pin_result: PinCheckResult
 
     def has_any_issues(self) -> bool:
         return (
             self.version_result.has_conflicts()
-            or self.license_result.has_issues()
             or self.deprecated_result.has_issues()
             or self.security_result.has_issues()
+            or self.pin_result.has_issues()
         )
 
     def summary(self) -> str:
-        counts = [
-            len(self.version_result.conflicts),
-            len(self.license_result.issues),
-            len(self.deprecated_result.issues),
-            len(self.security_result.issues),
-        ]
-        total = sum(counts)
-        return (
-            f"Total issues: {total} "
-            f"(version={counts[0]}, license={counts[1]}, "
-            f"deprecated={counts[2]}, security={counts[3]})"
-        )
+        parts = []
+        vc = len(self.version_result.conflicts)
+        dc = len(self.deprecated_result.issues)
+        sc = len(self.security_result.issues)
+        pc = len(self.pin_result.issues)
+        if vc:
+            parts.append(f"{vc} version conflict(s)")
+        if dc:
+            parts.append(f"{dc} deprecated package(s)")
+        if sc:
+            parts.append(f"{sc} security issue(s)")
+        if pc:
+            parts.append(f"{pc} pin issue(s)")
+        if not parts:
+            return "No issues found."
+        return "Issues: " + ", ".join(parts) + "."
 
-    def format(self, verbose: bool = False) -> str:
-        lines = []
-        if self.source_file:
-            lines.append(f"Analysis of: {self.source_file}")
-            lines.append(SECTION_SEP)
-
-        sections = [
-            ("Version Conflicts", self.version_result, self.version_result.has_conflicts()),
-            ("License Issues", self.license_result, self.license_result.has_issues()),
-            ("Deprecated Packages", self.deprecated_result, self.deprecated_result.has_issues()),
-            ("Security Vulnerabilities", self.security_result, self.security_result.has_issues()),
-        ]
-
-        for title, result, has_problem in sections:
-            if has_problem or verbose:
-                lines.append(f"[{title}]")
-                lines.append(str(result))
-                lines.append("")
-
-        lines.append(SECTION_SEP)
-        lines.append(self.summary())
-        return "\n".join(lines)
+    def format(self) -> str:
+        sections = [f"=== deplint report: {self.source_file} ==="]
+        if self.version_result.has_conflicts():
+            sections.append(str(self.version_result))
+        if self.deprecated_result.has_issues():
+            sections.append(str(self.deprecated_result))
+        if self.security_result.has_issues():
+            sections.append(str(self.security_result))
+        if self.pin_result.has_issues():
+            sections.append(str(self.pin_result))
+        sections.append(self.summary())
+        return "\n".join(sections)
