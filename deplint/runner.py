@@ -1,7 +1,10 @@
-"""Orchestrates all checks against a parsed requirements file."""
-from typing import List, Optional
+"""Orchestrate all checks against a list of dependencies."""
+from __future__ import annotations
+
+from typing import List
 
 from deplint.parser import Dependency, parse_requirements
+from deplint.report import AnalysisReport
 from deplint.version_checker import check_versions
 from deplint.license_checker import check_licenses
 from deplint.deprecated_checker import check_deprecated
@@ -11,44 +14,40 @@ from deplint.pin_checker import check_pins
 from deplint.duplicate_checker import check_duplicates
 from deplint.yanked_checker import check_yanked
 from deplint.extras_checker import check_extras
-from deplint.report import AnalysisReport
+from deplint.python_version_checker import check_python_versions
+from deplint.marker_checker import check_markers
+from deplint.env_checker import check_env_markers
 
 
 def run_all_checks(
-    dependencies: List[Dependency],
-    source_file: str = "<input>",
-    package_info: Optional[dict] = None,
-    allow_licenses: Optional[list] = None,
+    deps: List[Dependency],
+    source_file: str = "<stdin>",
+    allow_licenses: List[str] | None = None,
 ) -> AnalysisReport:
-    """Run every available check and return a combined report."""
-    info = package_info or {}
-
-    return AnalysisReport(
-        source_file=source_file,
-        version_result=check_versions(dependencies),
-        license_result=check_licenses(dependencies, info, allow_list=allow_licenses),
-        deprecated_result=check_deprecated(dependencies),
-        security_result=check_security(dependencies),
-        outdated_result=check_outdated(dependencies, info),
-        pin_result=check_pins(dependencies),
-        duplicate_result=check_duplicates(dependencies),
-        yanked_result=check_yanked(dependencies, info),
-        extras_result=check_extras(dependencies),
-    )
+    """Run every available checker against *deps* and return a combined report."""
+    results = [
+        check_versions(deps),
+        check_licenses(deps, allow_list=allow_licenses),
+        check_deprecated(deps),
+        check_security(deps),
+        check_outdated(deps),
+        check_pins(deps),
+        check_duplicates(deps),
+        check_yanked(deps),
+        check_extras(deps),
+        check_python_versions(deps),
+        check_markers(deps),
+        check_env_markers(deps),
+    ]
+    return AnalysisReport(source_file=source_file, results=results)
 
 
 def run_checks_from_file(
     path: str,
-    package_info: Optional[dict] = None,
-    allow_licenses: Optional[list] = None,
+    allow_licenses: List[str] | None = None,
 ) -> AnalysisReport:
-    """Parse a requirements file from disk and run all checks."""
+    """Parse *path* as a requirements file and run all checks."""
     with open(path, "r", encoding="utf-8") as fh:
-        text = fh.read()
-    deps = parse_requirements(text)
-    return run_all_checks(
-        deps,
-        source_file=path,
-        package_info=package_info,
-        allow_licenses=allow_licenses,
-    )
+        content = fh.read()
+    deps = parse_requirements(content)
+    return run_all_checks(deps, source_file=path, allow_licenses=allow_licenses)
