@@ -45,6 +45,14 @@ def _extract_pinned_version(dep: Dependency) -> Optional[str]:
     return None
 
 
+def _parse_version_safe(version_str: str) -> Optional[Version]:
+    """Parse a version string, returning None if it is invalid."""
+    try:
+        return Version(version_str)
+    except InvalidVersion:
+        return None
+
+
 def check_outdated(
     deps: List[Dependency],
     info_map: Optional[dict] = None,
@@ -75,10 +83,10 @@ def check_outdated(
         if not latest_str:
             continue
 
-        try:
-            current = Version(pinned)
-            latest = Version(latest_str)
-        except InvalidVersion:
+        current = _parse_version_safe(pinned)
+        latest = _parse_version_safe(latest_str)
+
+        if current is None or latest is None:
             continue
 
         if current < latest:
