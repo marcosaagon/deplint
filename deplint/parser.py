@@ -1,75 +1,57 @@
-"""Parser for Python dependency files (requirements.txt format)."""
-
+"""Parser for pip-style requirements.txt files."""
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import List, Optional
 
 
 @dataclass
 class Dependency:
-    """Represents a single parsed dependency entry."""
-
     name: str
-    version_spec: str = ""
-    extras: list[str] = field(default_factory=list)
-    line_number: int = 0
+    version_spec: Optional[str] = None
+    extras: List[str] = field(default_factory=list)
+    line_number: Optional[int] = None
     raw: str = ""
 
     def __str__(self) -> str:
         extras_str = f"[{','.join(self.extras)}]" if self.extras else ""
-        return f"{self.name}{extras_str}{self.version_spec}"
+        spec = self.version_spec or ""
+        return f"{self.name}{extras_str}{spec}"
 
 
-# Matches: package[extra1,extra2]>=1.0,<2.0  (with optional comment)
-_DEP_PATTERN = re.compile(
-    r"^(?P<name>[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?)"
+# e.g. requests[security,socks]==2.28.0
+_DEP_RE = re.compile(
+    r"^(?P<name>[A-Za-z0-9_.-]+)"
     r"(?:\[(?P<extras>[^\]]+)\])?"
-    r"(?P<version_spec>[^#\s]*)\s*"
-    r"(?:#.*)?$"
+    r"(?P<spec>[^;#\s]*)?"
+    r"(?:\s*#.*)?$"
 )
 
 
-def parse_requirements(content: str) -> list[Dependency]:
-    """Parse requirements.txt content and return a list of Dependency objects.
-
-    Ignores blank lines, comments, and options (lines starting with '-').
-
-    Args:
-        content: Raw text content of a requirements file.
-
-    Returns:
-        List of parsed Dependency objects.
-    """
-    dependencies: list[Dependency] = []
-
-    for lineno, line in enumerate(content.splitlines(), start=1):
-        stripped = line.strip()
-
-        # Skip empty lines, comments, and pip options
-        if not stripped or stripped.startswith("#") or stripped.startswith("-"):
+def parse_requirements(text: str) -> List[Dependency]:
+    """Parse a requirements.txt string into a list of Dependency objects."""
+    deps: List[Dependency] = []
+    for lineno, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("#") or line.startswith("-"):
             continue
-
-        # Handle inline URLs / VCS references — skip gracefully
-        if re.search(r"(https?://|git\+|svn\+|hg\+)", stripped):
+        # Strip inline comments
+        line_no_comment = re.sub(r"\s*#.*$", "", line).strip()
+        m = _DEP_RE.match(line_no_comment)
+        if not m:
             continue
-
-        match = _DEP_PATTERN.match(stripped)
-        if not match:
-            continue
-
-        name = match.group("name")
-        extras_raw: Optional[str] = match.group("extras")
-        extras = [e.strip() for e in extras_raw.split(",")] if extras_raw else []
-        version_spec = match.group("version_spec").strip()
-
-        dependencies.append(
+        name = m.group("name")
+        extras_raw = m.group("extras") or ""
+        extras = [e.strip() for e in extras_raw.split(",") if e.strip()]
+        spec = m.group("spec") or None
+        if spec == "":
+            spec = None
+        deps.append(
             Dependency(
                 name=name,
-                version_spec=version_spec,
+                version_spec=spec,
                 extras=extras,
                 line_number=lineno,
-                raw=stripped,
+                raw=raw_line,
             )
         )
-
-    return dependencies
+    return deps
